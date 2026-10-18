@@ -10,19 +10,36 @@ public struct CuePreferences: Codable, Hashable, Sendable {
     /// The Watch speaks its own cues during Watch sessions. Off by default: the Watch is
     /// haptics-only unless the user turns this on (v1 device feedback, item 1).
     public var watchVoiceCues: Bool
+    /// Length of the pre-start "3-2-1" countdown, in seconds. Clamped to `0...15`; beeps
+    /// (gated by `countdownBeeps`) still fire only on the last `beepSeconds(forCountdown:)`
+    /// of it, so a longer countdown is a visible count with beeps only near the end.
+    /// Additive: older payloads decode to the default, 3 (push-up-feedback-debug-workout.md §2).
+    public var startCountdownSeconds: Int
+    /// Length of the "beep beep beep" countdown at the *end* of every step, before the
+    /// next rep/rest starts. Separate from `startCountdownSeconds` (the pre-start countdown).
+    /// Clamped to `0...15` (picker offers Off/3/5/10/15); `0` means no step-end countdown at
+    /// all. Drives `IntervalEngine`'s
+    /// `.countdown` events (via its `countdownSeconds` init parameter), which in turn drive
+    /// both the beeps (`CueMapper`, gated by `countdownBeeps`) and the apps' countdown haptics.
+    /// Additive: older payloads decode to the default, 3.
+    public var stepCountdownSeconds: Int
 
     public init(
         enabled: Bool = true,
         voice: Bool = true,
         countdownBeeps: Bool = true,
         halfway: Bool = true,
-        watchVoiceCues: Bool = false
+        watchVoiceCues: Bool = false,
+        startCountdownSeconds: Int = 3,
+        stepCountdownSeconds: Int = 3
     ) {
         self.enabled = enabled
         self.voice = voice
         self.countdownBeeps = countdownBeeps
         self.halfway = halfway
         self.watchVoiceCues = watchVoiceCues
+        self.startCountdownSeconds = Self.clampedStartCountdown(startCountdownSeconds)
+        self.stepCountdownSeconds = Self.clampedStepCountdown(stepCountdownSeconds)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -33,6 +50,32 @@ public struct CuePreferences: Codable, Hashable, Sendable {
         countdownBeeps = try c.decodeIfPresent(Bool.self, forKey: .countdownBeeps) ?? defaults.countdownBeeps
         halfway = try c.decodeIfPresent(Bool.self, forKey: .halfway) ?? defaults.halfway
         watchVoiceCues = try c.decodeIfPresent(Bool.self, forKey: .watchVoiceCues) ?? defaults.watchVoiceCues
+        let decodedStartCountdown = try c.decodeIfPresent(Int.self, forKey: .startCountdownSeconds)
+            ?? defaults.startCountdownSeconds
+        startCountdownSeconds = Self.clampedStartCountdown(decodedStartCountdown)
+        let decodedStepCountdown = try c.decodeIfPresent(Int.self, forKey: .stepCountdownSeconds)
+            ?? defaults.stepCountdownSeconds
+        stepCountdownSeconds = Self.clampedStepCountdown(decodedStepCountdown)
+    }
+
+    /// Clamps to `0...15`, so a corrupt or out-of-range synced value can't produce a
+    /// negative or absurdly long pre-start countdown.
+    public static func clampedStartCountdown(_ seconds: Int) -> Int {
+        min(max(seconds, 0), 15)
+    }
+
+    /// Clamps to `0...15` (the picker offers Off/3/5/10/15), so a corrupt or out-of-range
+    /// synced value can't produce a negative or absurdly long step-end countdown.
+    public static func clampedStepCountdown(_ seconds: Int) -> Int {
+        min(max(seconds, 0), 15)
+    }
+
+    /// How many of the final seconds of a pre-start countdown of length `seconds` get a
+    /// beep: the last 3, or fewer when the countdown itself is shorter than that. Pure and
+    /// shared so the phone and Watch agree on when beeps fire regardless of where the
+    /// pre-start countdown loop itself lives (app-side today).
+    public static func beepSeconds(forCountdown seconds: Int) -> Int {
+        min(clampedStartCountdown(seconds), 3)
     }
 }
 
@@ -70,11 +113,25 @@ public struct WatchSettings: Codable, Hashable, Sendable {
     /// The Watch treats incoming settings with a time >= its pending local change as
     /// authoritative. `nil` from older phones.
     public var hapticsChangedAt: Date?
+    /// Show the Quick Timers page on the Watch home (library-dashboard-split.md). Off by default:
+    /// it distracts from the plan.
+    public var showsQuickTimers: Bool
+    /// Show the DEBUG-only "🧪 UI Test" workout. The flag ships in Release but has nothing to
+    /// show there.
+    public var showsTestWorkout: Bool
 
-    public init(cues: CuePreferences = CuePreferences(), haptics: WatchHaptics = WatchHaptics(), hapticsChangedAt: Date? = nil) {
+    public init(
+        cues: CuePreferences = CuePreferences(),
+        haptics: WatchHaptics = WatchHaptics(),
+        hapticsChangedAt: Date? = nil,
+        showsQuickTimers: Bool = false,
+        showsTestWorkout: Bool = true
+    ) {
         self.cues = cues
         self.haptics = haptics
         self.hapticsChangedAt = hapticsChangedAt
+        self.showsQuickTimers = showsQuickTimers
+        self.showsTestWorkout = showsTestWorkout
     }
 
     /// Pre-preset initializer: the strength maps to its preset, toggles stay on.
@@ -93,6 +150,8 @@ public struct WatchSettings: Codable, Hashable, Sendable {
         case haptics
         case hapticStrength
         case hapticsChangedAt
+        case showsQuickTimers
+        case showsTestWorkout
     }
 
     /// `haptics` wins when present; an older phone's payload with only `hapticStrength` maps to
@@ -108,6 +167,8 @@ public struct WatchSettings: Codable, Hashable, Sendable {
             haptics = WatchHaptics()
         }
         hapticsChangedAt = try c.decodeIfPresent(Date.self, forKey: .hapticsChangedAt)
+        showsQuickTimers = try c.decodeIfPresent(Bool.self, forKey: .showsQuickTimers) ?? false
+        showsTestWorkout = try c.decodeIfPresent(Bool.self, forKey: .showsTestWorkout) ?? true
     }
 
     /// Also writes `hapticStrength`, so a Watch from before presets keeps a matching strength.
@@ -117,6 +178,8 @@ public struct WatchSettings: Codable, Hashable, Sendable {
         try c.encode(haptics, forKey: .haptics)
         try c.encode(hapticStrength, forKey: .hapticStrength)
         try c.encodeIfPresent(hapticsChangedAt, forKey: .hapticsChangedAt)
+        try c.encode(showsQuickTimers, forKey: .showsQuickTimers)
+        try c.encode(showsTestWorkout, forKey: .showsTestWorkout)
     }
 
     /// Application-context key holding the encoded settings, next to the `syncPrograms` envelope.

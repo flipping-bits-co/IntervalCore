@@ -16,10 +16,14 @@ public struct IntervalEngine: Codable, Hashable, Sendable {
     /// Steps shorter than this are treated as ended. Absorbs floating-point drift
     /// from many fractional ticks.
     static let epsilon: TimeInterval = 1e-9
-    static let countdownSeconds = [3, 2, 1]
     static let halfwayMinimum: TimeInterval = 60
 
     public let timeline: Timeline
+    /// Length of the step-end "beep beep beep" countdown: emits `.countdown` for
+    /// `secondsRemaining` N...1 before a step ends. `0` emits none. Declaring the default
+    /// here (rather than only in the inits below) makes synthesized `Decodable` treat a
+    /// missing key — an older encoded engine — as 3, same as every other call site.
+    public private(set) var countdownSeconds: Int = 3
     public private(set) var status: Status = .ready
     public private(set) var currentIndex: Int = 0
     /// 1-based pass through the loop range.
@@ -42,12 +46,13 @@ public struct IntervalEngine: Codable, Hashable, Sendable {
     /// Clock reading of the last `start`/`tick`/`resume`. Only meaningful once started.
     private var lastTick: Date = .distantPast
 
-    public init(timeline: Timeline) {
+    public init(timeline: Timeline, countdownSeconds: Int = 3) {
         self.timeline = timeline
+        self.countdownSeconds = countdownSeconds
     }
 
-    public init(program: ProgramSnapshot) {
-        self.init(timeline: program.compile())
+    public init(program: ProgramSnapshot, countdownSeconds: Int = 3) {
+        self.init(timeline: program.compile(), countdownSeconds: countdownSeconds)
     }
 
     // MARK: - Derived state
@@ -407,10 +412,12 @@ public struct IntervalEngine: Codable, Hashable, Sendable {
                 events.append(.halfway(index: step.index))
             }
         }
-        for n in Self.countdownSeconds where duration > Double(n) {
-            let mark = duration - Double(n)
-            if before < mark - Self.epsilon, after >= mark - Self.epsilon {
-                events.append(.countdown(index: step.index, secondsRemaining: n))
+        if countdownSeconds > 0 {
+            for n in stride(from: countdownSeconds, through: 1, by: -1) where duration > Double(n) {
+                let mark = duration - Double(n)
+                if before < mark - Self.epsilon, after >= mark - Self.epsilon {
+                    events.append(.countdown(index: step.index, secondsRemaining: n))
+                }
             }
         }
     }

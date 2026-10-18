@@ -76,3 +76,37 @@ extension ProgramSnapshot {
         return copy
     }
 }
+
+#if DEBUG
+extension TemplateCatalog {
+    /// DEBUG-only "🧪 UI Test" workout (~2 min): a short prepare, 3 rounds of named
+    /// work/rest (so voice cues speak "Push-ups"), and a rest step that ends on HR with a
+    /// time cap (so it ends even without a live HR feed). Exercises the live UI — ring,
+    /// HR layout, voice cues — without a real workout. Its id is
+    /// `ProgramSnapshot.debugUITestProgramID`, so apps recognise the run and skip track
+    /// advancement, Health saving, and History stats.
+    ///
+    /// Deliberately not in `all`: Debug-only lists (e.g. the app's own
+    /// `BundledTemplates.debugUITest`) reference this directly, so a Release build never
+    /// sees it (push-up-feedback-debug-workout.md §1).
+    public static let debugUITest: ProgramSnapshot = {
+        let rounds = IntervalBlock(
+            steps: [
+                IntervalStep(kind: .work, name: "Push-ups", end: .time(15)),
+                IntervalStep(kind: .rest, end: .time(10)),
+            ],
+            repeats: 3
+        )
+        // Time-capped HR step: ends at HR < 120, or after 40 s regardless, so a run with
+        // no HR source (simulator, no Watch) still finishes.
+        let recover = IntervalBlock(
+            steps: [IntervalStep(kind: .rest, name: "Recover", end: .heartRateBelow(bpm: 120, maxWait: 40))]
+        )
+        return ProgramSnapshot(
+            name: "🧪 UI Test",
+            activity: .hiit,
+            blocks: Presets.prepareBlocks(5) + [rounds, recover]
+        ).withStableIDs("ember.template.debugUITest", id: ProgramSnapshot.debugUITestProgramID.uuidString)
+    }()
+}
+#endif

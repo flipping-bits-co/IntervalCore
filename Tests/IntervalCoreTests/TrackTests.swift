@@ -216,6 +216,36 @@ struct TemplateCatalogTests {
         #expect(TemplateCatalog.tenTwentyThirty.estimatedDuration().seconds == 2040)  // 10:00 + 3 × 5:00 + 2 × 2:00 + 5:00
         #expect(TemplateCatalog.norwegian4x4.activity == .running)
     }
+
+    @Test func debugUITestIsAWellKnownTestProgram() {
+        let program = TemplateCatalog.debugUITest
+        #expect(program.id == ProgramSnapshot.debugUITestProgramID)
+        #expect(program.isTestProgram)
+        #expect(!TemplateCatalog.all.contains { $0.id == program.id })
+
+        let timeline = program.compile()
+        #expect(timeline.steps.contains { $0.displayName == "Push-ups" })
+        #expect(timeline.steps.filter { $0.displayName == "Push-ups" }.count == 3)
+        #expect(timeline.steps.contains { $0.end.isHeartRate })
+        #expect(timeline.steps.last?.end == .heartRateBelow(bpm: 120, maxWait: 40))
+
+        let estimate = program.estimatedDuration()
+        #expect(estimate.seconds >= 90 && estimate.seconds <= 150)
+    }
+
+    @Test func isTestProgramIsFalseForOrdinaryPrograms() {
+        #expect(!Presets.tabata().isTestProgram)
+        #expect(!TemplateCatalog.thirtyThirty.isTestProgram)
+    }
+
+    /// The id — the only thing the test-run check relies on — must survive the phone →
+    /// Watch Codable trip with no new wire field.
+    @Test func testProgramIdentitySurvivesRoundTrip() throws {
+        let data = try JSONEncoder().encode(TemplateCatalog.debugUITest)
+        let decoded = try JSONDecoder().decode(ProgramSnapshot.self, from: data)
+        #expect(decoded.isTestProgram)
+        #expect(decoded.id == ProgramSnapshot.debugUITestProgramID)
+    }
 }
 
 // MARK: - Chainer

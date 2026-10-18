@@ -137,6 +137,61 @@ struct CuePreferencesTests {
         #expect(HapticStrength.allCases.map(\.label) == ["Light", "Normal", "Strong"])
         #expect(HapticStrength.normal.id == "normal")
     }
+
+    // MARK: - Start countdown
+
+    @Test func startCountdownDefaultsToThree() {
+        #expect(CuePreferences().startCountdownSeconds == 3)
+    }
+
+    @Test func oldPayloadWithoutStartCountdownDecodesToDefault() throws {
+        let prefs = try JSONDecoder().decode(CuePreferences.self, from: Data(#"{"voice":false}"#.utf8))
+        #expect(prefs.startCountdownSeconds == 3)
+
+        // A full pre-field payload, as an older phone would have sent it.
+        let legacy = #"{"enabled":true,"voice":true,"countdownBeeps":true,"halfway":true,"watchVoiceCues":false}"#
+        let fromLegacyPhone = try JSONDecoder().decode(CuePreferences.self, from: Data(legacy.utf8))
+        #expect(fromLegacyPhone.startCountdownSeconds == 3)
+        #expect(fromLegacyPhone == CuePreferences())
+    }
+
+    @Test func startCountdownRoundTrips() throws {
+        let prefs = CuePreferences(startCountdownSeconds: 10)
+        let decoded = try JSONDecoder().decode(CuePreferences.self, from: JSONEncoder().encode(prefs))
+        #expect(decoded == prefs)
+        #expect(decoded.startCountdownSeconds == 10)
+
+        let settings = WatchSettings(cues: prefs, hapticStrength: .light)
+        let decodedSettings = try JSONDecoder().decode(WatchSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decodedSettings.cues.startCountdownSeconds == 10)
+    }
+
+    @Test func startCountdownClampsToZeroToFifteen() throws {
+        #expect(CuePreferences(startCountdownSeconds: -5).startCountdownSeconds == 0)
+        #expect(CuePreferences(startCountdownSeconds: 0).startCountdownSeconds == 0)
+        #expect(CuePreferences(startCountdownSeconds: 15).startCountdownSeconds == 15)
+        #expect(CuePreferences(startCountdownSeconds: 100).startCountdownSeconds == 15)
+        #expect(CuePreferences.clampedStartCountdown(42) == 15)
+        #expect(CuePreferences.clampedStartCountdown(-1) == 0)
+
+        // An out-of-range synced value (e.g. a corrupt payload) still clamps on decode.
+        let decoded = try JSONDecoder().decode(CuePreferences.self, from: Data(#"{"startCountdownSeconds":999}"#.utf8))
+        #expect(decoded.startCountdownSeconds == 15)
+        let negative = try JSONDecoder().decode(CuePreferences.self, from: Data(#"{"startCountdownSeconds":-3}"#.utf8))
+        #expect(negative.startCountdownSeconds == 0)
+    }
+
+    @Test func beepSecondsIsAtMostThreeAndNeverExceedsTheCountdown() {
+        #expect(CuePreferences.beepSeconds(forCountdown: 3) == 3)
+        #expect(CuePreferences.beepSeconds(forCountdown: 10) == 3)
+        #expect(CuePreferences.beepSeconds(forCountdown: 15) == 3)
+        #expect(CuePreferences.beepSeconds(forCountdown: 2) == 2)
+        #expect(CuePreferences.beepSeconds(forCountdown: 1) == 1)
+        #expect(CuePreferences.beepSeconds(forCountdown: 0) == 0)
+        // Clamped before counting, so out-of-range inputs still behave sanely.
+        #expect(CuePreferences.beepSeconds(forCountdown: -4) == 0)
+        #expect(CuePreferences.beepSeconds(forCountdown: 999) == 3)
+    }
 }
 
 struct WatchSettingsSyncTests {

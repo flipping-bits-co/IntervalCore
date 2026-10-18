@@ -107,4 +107,18 @@ public struct ProgramSnapshot: Codable, Hashable, Identifiable, Sendable {
     public func estimatedDuration(assumptions: EstimateAssumptions? = nil) -> DurationEstimate {
         DurationEstimator.estimate(compile(), assumptions: assumptions ?? EstimateAssumptions(activity: activity))
     }
+
+    /// Fixed id of the DEBUG-only "🧪 UI Test" workout (`TemplateCatalog.debugUITest`,
+    /// available only in DEBUG builds). Defined unconditionally — not `#if DEBUG` — so the
+    /// Health-save, History-stats, and track-advancement guards that check `isTestProgram`
+    /// compile and ship in Release too; no Release-reachable code ever produces a program
+    /// with this id, so those guards are harmless no-ops there. The id travels inside
+    /// `ProgramSnapshot` itself, so it survives the phone → Watch Codable trip with no new
+    /// wire field (push-up-feedback-debug-workout.md §1).
+    // Force unwrap is safe: a constant, well-formed UUID literal always parses.
+    public static let debugUITestProgramID = UUID(uuidString: "6C1E0001-0000-4000-8000-0000000000FF")!
+
+    /// True when this program is the DEBUG-only test workout. Apps use this to skip track
+    /// advancement, `HealthKitWorkoutSaver`, and History stats for the run.
+    public var isTestProgram: Bool { id == Self.debugUITestProgramID }
 }

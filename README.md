@@ -135,8 +135,15 @@ samples), is about 128 KB.
 `CueMapper.cues(for: events, timeline:, preferences:)` turns engine events into `Cue`s: `.phase(name)`
 (the step name, or the kind label), `.countdown(3/2/1)`, `.halfway`, and `.completed`. Phone and Watch share
 this one rule set. After a multi-boundary tick only the latest step is announced, and stopping early is silent.
-`CuePreferences` (enabled, voice, countdownBeeps, halfway, `watchVoiceCues` = false) filters the cues;
-`watchVoiceCues` only decides whether the Watch plays cues at all. `HapticStrength` is light / normal /
+`CuePreferences` (enabled, voice, countdownBeeps, halfway, `watchVoiceCues` = false, `startCountdownSeconds` = 3,
+`stepCountdownSeconds` = 3) filters the cues; `watchVoiceCues` only decides whether the Watch plays cues at all.
+`startCountdownSeconds` (clamped `0...15`) is the length of the pre-start "3-2-1" countdown, which the apps
+run themselves; `CuePreferences.beepSeconds(forCountdown:)` is the shared, pure rule for how many of its
+final seconds get a beep (the last 3, or fewer when the countdown is shorter). `stepCountdownSeconds` (clamped
+`0...15`, via `clampedStepCountdown`) is the length of the step-*end* "beep beep beep" countdown, before the
+next rep/rest starts; it's passed to `IntervalEngine.init(timeline:countdownSeconds:)` /
+`init(program:countdownSeconds:)` (default 3), which emits `.countdown(secondsRemaining:)` for N...1 (none for
+0), still guarded so a mark never lands before the step starts. `HapticStrength` is light / normal /
 strong (default strong), used for iPhone haptics. The Watch uses `WatchHaptics { preset, countdownTaps,
 halfwayTap }`: a `HapticPreset` (subtle / standard / strong / max, default strong) whose patterns live in the
 Watch app, since `WKHapticType` is watchOS-only. `WatchSettings.hapticStrength` is kept as a computed view of the
@@ -194,6 +201,11 @@ TrackEnrollment ◀── advance / repeat / unchanged ◀── TrackOutcome.ev
 - **Content.** `BundledTracks`: Run / Walk (C25K, 9 × 3), Push-ups, Pull-ups (level A = assisted + negatives),
   Sit-ups (3 levels, 6 × 3, re-tests W3 D3 and W6 D3), Plank (4 × 3 timed holds). `TemplateCatalog`: 30/30,
   4×4 Norwegian, 10-20-30, Pyramid. Every id is a `StableUUID` derived from a fixed name.
+  `TemplateCatalog.debugUITest` (DEBUG builds only, not in `all`) is a ~2 min workout — prepare, 3 rounds of
+  named work/rest, an HR-ended rest step with a time cap — for exercising the live UI. Its fixed id,
+  `ProgramSnapshot.debugUITestProgramID`, is defined unconditionally so `ProgramSnapshot.isTestProgram` can
+  gate Health saving, History stats, and track advancement in code that ships in Release too (it's just never
+  `true` there, since no Release-reachable code creates a program with that id).
 
 ## Session stats
 
